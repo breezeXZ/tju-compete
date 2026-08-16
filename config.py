@@ -116,6 +116,34 @@ COMPETITIONS = {
     "化学实验竞赛": {"category": "学科竞赛", "grades": [2, 3]},
     "生命科学竞赛": {"category": "学科竞赛", "grades": [2, 3]},
     "力学竞赛": {"category": "学科竞赛", "grades": [2, 3]},
+    "节能减排大赛": {"category": "学科竞赛", "grades": [2, 3, 4]},
+    "工程训练综合能力竞赛": {"category": "学科竞赛", "grades": [2, 3]},
+    "先进成图技术与产品信息建模": {"category": "学科竞赛", "grades": [2, 3]},
+    "大学生电子商务三创赛": {"category": "创新创业", "grades": [1, 2, 3, 4]},
+    "三创赛": {"category": "创新创业", "grades": [1, 2, 3, 4]},
+    "服务外包创新创业大赛": {"category": "创新创业", "grades": [1, 2, 3, 4]},
+    "市场调查与分析大赛": {"category": "学科竞赛", "grades": [1, 2, 3, 4]},
+    "广告艺术大赛": {"category": "学科竞赛", "grades": [1, 2, 3, 4]},
+    "嵌入式系统设计": {"category": "学科竞赛", "grades": [2, 3]},
+    "物联网设计大赛": {"category": "学科竞赛", "grades": [2, 3]},
+    "智能制造挑战赛": {"category": "学科竞赛", "grades": [2, 3]},
+    "无人机大赛": {"category": "学科竞赛", "grades": [2, 3]},
+    "数学建模大赛": {"category": "学科竞赛", "grades": [2, 3, 4], "alias_of": "全国大学生数学建模竞赛"},
+    "英语写作大赛": {"category": "学科竞赛", "grades": [1, 2, 3, 4]},
+    "英语演讲大赛": {"category": "学科竞赛", "grades": [1, 2, 3, 4]},
+    "物理实验竞赛": {"category": "学科竞赛", "grades": [1, 2, 3]},
+    "化学实验设计": {"category": "学科竞赛", "grades": [2, 3]},
+    "金相大赛": {"category": "学科竞赛", "grades": [2, 3]},
+    "生命科学竞赛": {"category": "学科竞赛", "grades": [2, 3, 4]},
+    "全国大学生统计建模": {"category": "学科竞赛", "grades": [2, 3]},
+    "统计建模": {"category": "学科竞赛", "grades": [2, 3]},
+    "大学生企业经营模拟": {"category": "学科竞赛", "grades": [1, 2, 3]},
+    "商业精英挑战赛": {"category": "学科竞赛", "grades": [1, 2, 3]},
+    "师范生教学技能": {"category": "学科竞赛", "grades": [2, 3]},
+    "职业生涯规划大赛": {"category": "就业实习", "grades": [2, 3, 4]},
+    "大学生职业规划大赛": {"category": "就业实习", "grades": [2, 3, 4]},
+    "创新创业大赛": {"category": "创新创业", "grades": [1, 2, 3, 4]},
+    "红色筑梦之旅": {"category": "创新创业", "grades": [1, 2, 3, 4]},
     # —— 学术科研 ——
     "学术会议": {"category": "学术科研", "grades": [3, 4]},
     "征文": {"category": "学术科研", "grades": [3, 4]},
@@ -233,9 +261,11 @@ ACCOUNTS = [
 ]
 
 # 每个公众号最多抓取的文章数（保护频率，防止搜狗封禁）
-MAX_ARTICLES_PER_ACCOUNT = 5
+MAX_ARTICLES_PER_ACCOUNT = 10
 # 连续被搜狗拦截多少次后，本轮提前结束（不再硬刚）
 MAX_CONSECUTIVE_BLOCKS = 3
+# 只保留 N 天以内的文章（搜狗按公众号搜常返回陈年旧文，用它过滤）
+MAX_ARTICLE_AGE_DAYS = 90
 
 # 搜狗搜索反爬：请求头模板
 SOGOU_HEADERS = {

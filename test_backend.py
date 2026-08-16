@@ -42,8 +42,7 @@ def main():
         "面向大一新生，欢迎软件学院和智算学部同学参加，蓝桥杯选拔。",
         "测试源", "http://x/2", "2026-08-02")
     check("命中蓝桥杯/程序设计", "蓝桥杯" in it2["competitions"], it2["competitions"])
-    check("学院=软件学院", "软件学院" in it2["colleges"], it2["colleges"])
-    check("学院=智算学部", "智能与计算学部" in it2["colleges"], it2["colleges"])
+    check("学院=智算学部(软件学院归入)", "智能与计算学部" in it2["colleges"], it2["colleges"])
     check("年级=大一", it2["grades"] == [1], it2["grades"])
 
     # 3. 挑战杯 + 全体
@@ -77,9 +76,9 @@ def main():
 
     print("== API feed 过滤排序 ==")
     from api import _score
-    # 软件学院学生：it2 学院命中 → 分数最高
-    s1 = _score(it, 2, "软件学院")
-    s2 = _score(it2, 1, "软件学院")
+    # 智算学部学生：it2 学院命中 → 分数最高
+    s1 = _score(it, 2, "智能与计算学部")
+    s2 = _score(it2, 1, "智能与计算学部")
     check("学院优先排序", s2 > s1, (s2, s1))
     # 大二看：it(建模) 命中年级，it2(软件) 未命中大二
     sa = _score(it, 2, "")

@@ -18,7 +18,7 @@ import storage  # noqa: E402
 
 GRADES = [{"id": 1, "name": "大一"}, {"id": 2, "name": "大二"},
           {"id": 3, "name": "大三"}, {"id": 4, "name": "大四"}]
-CATEGORIES = ["全部", "创新创业", "学科竞赛", "学术科研", "文体活动", "就业实习"]
+CATEGORIES = ["全部", "创新创业", "学科竞赛", "学术科研", "文体活动", "就业实习", "其他"]
 
 
 def export():

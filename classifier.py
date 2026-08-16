@@ -75,13 +75,13 @@ def find_competitions(text):
 
 
 def category_of(text, comps):
-    """类别：优先用竞赛自带类别，其次关键词"""
+    """类别：优先用竞赛自带类别，其次关键词，都没有则归为『其他』"""
     if comps:
         return config.COMPETITIONS[comps[0]]["category"]
     for cat, kws in config.CATEGORY_KEYWORDS.items():
         if any(k in text for k in kws):
             return cat
-    return "学科竞赛"
+    return "其他"
 
 
 def summary_of(text, n=70):

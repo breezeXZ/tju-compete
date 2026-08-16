@@ -139,40 +139,119 @@ def fetch_rss(account):
 
 
 # ============ 文章正文抓取 ============
+
+def parse_date(text):
+    """把微信常见日期格式解析为 ISO 日期 'YYYY-MM-DD'，失败返回 None"""
+    text = text or ""
+    # 2026-08-10 / 2026/8/10 / 2026年8月10日
+    m = re.search(r"(\d{4})[-年/.](\d{1,2})[-月/.](\d{1,2})", text)
+    if m:
+        return "%04d-%02d-%02d" % (int(m.group(1)), int(m.group(2)), int(m.group(3)))
+    # 8月10日（无年份 → 今年；若日期在未来则归为去年）
+    m = re.search(r"(\d{1,2})月(\d{1,2})日", text)
+    if m:
+        import datetime
+        mo, d = int(m.group(1)), int(m.group(2))
+        now = datetime.date.today()
+        y = now.year
+        if (mo, d) > (now.month, now.day):
+            y -= 1
+        return "%04d-%02d-%02d" % (y, mo, d)
+    return None
+
+
+def is_recent(date_str, max_days):
+    """日期是否在 max_days 天内；未知日期不误删（返回 True）"""
+    if not date_str:
+        return True
+    try:
+        import datetime
+        y, mo, d = map(int, date_str.split("-"))
+        dt = datetime.date(y, mo, d)
+        return (datetime.date.today() - dt).days <= max_days
+    except Exception:
+        return True
+
+
 def fetch_article(url):
-    """返回 (title, content_text, date)，失败抛异常"""
+    """返回 (title, content_text, date_iso, account)，失败抛异常"""
     resp = _get(url)
     if resp.status_code != 200:
         raise RuntimeError("HTTP %s" % resp.status_code)
+    html = resp.text
     from bs4 import BeautifulSoup
-    soup = BeautifulSoup(resp.text, "html.parser")
+    soup = BeautifulSoup(html, "html.parser")
     t_el = (soup.select_one("#activity-name")
             or soup.select_one("h1.rich_media_title")
             or soup.select_one("h1"))
     c_el = soup.select_one("#js_content") or soup.select_one("div.rich_media_content")
     title = t_el.get_text(" ", strip=True) if t_el else ""
     content = c_el.get_text(" ", strip=True) if c_el else ""
+
+    # 公众号名：#js_name 或 .rich_media_meta_nickname
+    a_el = (soup.select_one("#js_name")
+            or soup.select_one(".rich_media_meta_nickname")
+            or soup.select_one(".profile_nickname"))
+    account = a_el.get_text(strip=True) if a_el else ""
+
+    # 日期：优先 #publish_time / og 标签 / 全文第一个日期
     date = ""
     p_el = soup.select_one("#publish_time") or soup.select_one("em#publish_time")
     if p_el:
-        m = re.search(r"\d{4}-\d{2}-\d{2}", p_el.get_text())
+        date = parse_date(p_el.get_text())
+    if not date:
+        og = soup.select_one('meta[property="og:article:published_time"]')
+        if og:
+            date = parse_date(og.get("content", ""))
+    if not date:
+        m = re.search(r"20\d{2}[-年/.]\d{1,2}[-月/.]\d{1,2}", html)
         if m:
-            date = m.group(0)
-    return title, content, date
+            date = parse_date(m.group(0))
+    return title, content, date, account
 
 
 # ============ 主流程 ============
+def _normalize(s):
+    return re.sub(r"\s+|、|，|,|-|·", "", s or "")
+
+
+def _is_known_account(account):
+    """校验文章公众号是否在用户名单里；无法确定时默认保留"""
+    if not account:
+        return True
+    an = _normalize(account)
+    for acc in config.ACCOUNTS:
+        if not acc.get("enabled", True):
+            continue
+        cn = _normalize(acc["name"])
+        if an == cn or (len(an) >= 4 and (an in cn or cn in an)):
+            return True
+    return False
+
+
 def _process_new(account_name, article):
-    """对一篇新文章：抓正文 → 分类 → 入库。返回是否新增"""
+    """对一篇新文章：抓正文 → 校验来源(只留名单里的号) → 过滤旧文 → 分类入库。返回是否新增"""
     url = article["url"]
     if not url or storage.seen(url):
         return False
+    if "mp.weixin.qq.com" not in url:      # 只存真实文章链接
+        storage.mark_seen(url)
+        return False
     try:
-        title, content, date = fetch_article(url)
+        title, content, date, account = fetch_article(url)
+        # ① 只保留用户名单里的公众号文章
+        if not _is_known_account(account):
+            storage.mark_seen(url)
+            return False
         if not title and not content:
             title = article.get("title", "")
-        date = date or article.get("date", "")
-        item = classifier.classify(title, content, account_name, url, date)
+        date = date or article.get("date", "") or ""
+        date = parse_date(date) or date
+        # ② 只保留近期文章（搜狗按公众号搜常返回陈年旧文）
+        if date and not is_recent(date, config.MAX_ARTICLE_AGE_DAYS):
+            storage.mark_seen(url)
+            return False
+        item = classifier.classify(title, content, account or account_name, url, date)
         storage.mark_seen(url)
         return storage.upsert_item(item)
     except Exception as e:
@@ -232,12 +311,12 @@ def refresh():
 def add_manual_link(url, source="手动添加"):
     """手动链接兜底：抓正文 → 分类 → 入库"""
     try:
-        title, content, date = fetch_article(url)
+        title, content, date, account = fetch_article(url)
     except Exception as e:
         return {"ok": False, "error": "抓取失败: %s" % e}
     if not title and not content:
         return {"ok": False, "error": "内容为空（链接可能已失效或需要登录）"}
-    item = classifier.classify(title, content, source, url, date)
+    item = classifier.classify(title, content, account or source, url, date or "")
     is_new = storage.upsert_item(item)
     storage.mark_seen(url)
     return {"ok": True, "is_new": is_new, "item": item}
