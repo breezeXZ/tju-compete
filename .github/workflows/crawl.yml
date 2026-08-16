@@ -1,0 +1,40 @@
+# 定时抓取公众号 → 导出静态数据 → 提交到仓库（GitHub Pages 直接托管）
+name: 抓取并发布竞赛数据
+
+on:
+  schedule:
+    - cron: "23 */6 * * *"        # 每 6 小时自动抓一次（UTC 时间）
+  workflow_dispatch:               # 也可手动运行（可选填文章链接）
+    inputs:
+      link:
+        description: "手动添加文章链接（可选）"
+        required: false
+
+permissions:
+  contents: write                  # 允许把数据提交回仓库
+
+jobs:
+  crawl:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: 安装依赖
+        run: pip install -r requirements.txt
+
+      - name: 抓取公众号 + 导出数据
+        run: python crawl_and_export.py "${{ github.event.inputs.link }}"
+
+      - name: 提交数据到仓库
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet || git commit -m "chore: 更新竞赛数据 $(date -u +%Y-%m-%d_%H:%M)"
+          git push
