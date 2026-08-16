@@ -216,17 +216,37 @@ def _normalize(s):
 
 
 def _is_known_account(account):
-    """校验文章公众号是否在用户名单里；无法确定时默认保留"""
+    """严格校验文章公众号是否在用户名单里。
+    规则：文章号名 == 名单号名；或文章号名是某个名单号名的子名（且文章号名足够长）。
+    绝不反向匹配（否则名单里的『天津大学』会让所有『天津大学XX』混进来）。
+    """
     if not account:
-        return True
+        return True   # 页面拿不到号名时保留（#js_name 基本都能拿到）
     an = _normalize(account)
     for acc in config.ACCOUNTS:
         if not acc.get("enabled", True):
             continue
         cn = _normalize(acc["name"])
-        if an == cn or (len(an) >= 4 and (an in cn or cn in an)):
+        if an == cn:
+            return True
+        if len(an) >= 4 and an in cn:
             return True
     return False
+
+
+def prune(items):
+    """导出前清洗：只保留 名单内 + 近期 + 真实文章链接 的条目（旧垃圾自动剔除）"""
+    out = []
+    for it in items:
+        if "mp.weixin.qq.com" not in it.get("url", ""):
+            continue
+        if not _is_known_account(it.get("source", "")):
+            continue
+        d = it.get("date", "")
+        if d and not is_recent(d, config.MAX_ARTICLE_AGE_DAYS):
+            continue
+        out.append(it)
+    return out
 
 
 def _process_new(account_name, article):

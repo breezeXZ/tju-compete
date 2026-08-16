@@ -23,7 +23,7 @@ CATEGORIES = ["全部", "创新创业", "学科竞赛", "学术科研", "文体�
 
 def export():
     os.makedirs("data", exist_ok=True)
-    items = storage.get_items()
+    items = crawler.prune(storage.get_items())   # 发布前清洗：名单内+近期+真实链接
     payload = {
         "items": items,
         "updated_at": int(time.time()),
