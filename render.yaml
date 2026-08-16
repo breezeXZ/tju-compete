@@ -1,0 +1,15 @@
+# Render 一键部署配置（免费 Web Service）
+# 使用步骤见 README「部署」章节
+services:
+  - type: web
+    name: tju-compete-api
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn api:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: ADMIN_TOKEN
+        value: change-me-please   # 部署后务必改成你自己的管理密码（用于手动加文章链接）
