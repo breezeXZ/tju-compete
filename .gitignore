@@ -1,0 +1,8 @@
+# 运行时缓存（不要上传）
+__pycache__/
+*.pyc
+*.tmp
+*.log
+
+# 本地服务器运行时数据（根目录的 data.json）
+/data.json

@@ -174,7 +174,8 @@ def is_recent(date_str, max_days):
 
 
 def fetch_article(url):
-    """返回 (title, content_text, date_iso, account)，失败抛异常"""
+    """返回 (title, content_text, date_iso, account, perm_url)
+    perm_url = 文章永久链接（mp.weixin.qq.com/s/xxx，永不过期）；找不到则返回 None"""
     resp = _get(url)
     if resp.status_code != 200:
         raise RuntimeError("HTTP %s" % resp.status_code)
@@ -187,6 +188,20 @@ def fetch_article(url):
     c_el = soup.select_one("#js_content") or soup.select_one("div.rich_media_content")
     title = t_el.get_text(" ", strip=True) if t_el else ""
     content = c_el.get_text(" ", strip=True) if c_el else ""
+
+    # 永久链接：优先 canonical/og:url，其次全文正则（mp.weixin.qq.com/s/xxx）
+    perm_url = None
+    canon = soup.select_one('link[rel="canonical"]')
+    if canon and "mp.weixin.qq.com" in canon.get("href", ""):
+        perm_url = canon.get("href")
+    if not perm_url:
+        og = soup.select_one('meta[property="og:url"]')
+        if og and "mp.weixin.qq.com" in og.get("content", ""):
+            perm_url = og.get("content")
+    if not perm_url:
+        m = re.search(r"https://mp\.weixin\.qq\.com/s/[A-Za-z0-9_\-]+", html)
+        if m:
+            perm_url = m.group(0)
 
     # 公众号名：#js_name 或 .rich_media_meta_nickname
     a_el = (soup.select_one("#js_name")
@@ -207,7 +222,7 @@ def fetch_article(url):
         m = re.search(r"20\d{2}[-年/.]\d{1,2}[-月/.]\d{1,2}", html)
         if m:
             date = parse_date(m.group(0))
-    return title, content, date, account
+    return title, content, date, account, perm_url
 
 
 # ============ 主流程 ============
@@ -234,11 +249,16 @@ def _is_known_account(account):
     return False
 
 
+def _is_perm_link(url):
+    """永久链接格式：mp.weixin.qq.com/s/xxx（无 src=11 临时参数）"""
+    return bool(url) and "mp.weixin.qq.com/s/" in url and "src=11" not in url
+
+
 def prune(items):
-    """导出前清洗：只保留 名单内 + 近期 + 真实文章链接 的条目（旧垃圾自动剔除）"""
+    """导出前清洗：只保留 名单内 + 近期 + 永久链接 的条目（旧垃圾自动剔除）"""
     out = []
     for it in items:
-        if "mp.weixin.qq.com" not in it.get("url", ""):
+        if not _is_perm_link(it.get("url", "")):
             continue
         if not _is_known_account(it.get("source", "")):
             continue
@@ -258,9 +278,16 @@ def _process_new(account_name, article):
         storage.mark_seen(url)
         return False
     try:
-        title, content, date, account = fetch_article(url)
+        title, content, date, account, perm_url = fetch_article(url)
         # ① 只保留用户名单里的公众号文章
         if not _is_known_account(account):
+            storage.mark_seen(url)
+            return False
+        # ③ 只存永久链接（搜狗临时链接会过期）
+        if not perm_url:
+            storage.mark_seen(url)
+            return False
+        if storage.seen(perm_url):
             storage.mark_seen(url)
             return False
         if not title and not content:
@@ -271,8 +298,9 @@ def _process_new(account_name, article):
         if date and not is_recent(date, config.MAX_ARTICLE_AGE_DAYS):
             storage.mark_seen(url)
             return False
-        item = classifier.classify(title, content, account or account_name, url, date)
+        item = classifier.classify(title, content, account or account_name, perm_url, date)
         storage.mark_seen(url)
+        storage.mark_seen(perm_url)
         return storage.upsert_item(item)
     except Exception as e:
         log.warning("抓取文章失败 %s: %s", url, e)
@@ -331,12 +359,15 @@ def refresh():
 def add_manual_link(url, source="手动添加"):
     """手动链接兜底：抓正文 → 分类 → 入库"""
     try:
-        title, content, date, account = fetch_article(url)
+        title, content, date, account, perm_url = fetch_article(url)
     except Exception as e:
         return {"ok": False, "error": "抓取失败: %s" % e}
     if not title and not content:
         return {"ok": False, "error": "内容为空（链接可能已失效或需要登录）"}
-    item = classifier.classify(title, content, account or source, url, date or "")
+    final_url = perm_url or url
+    item = classifier.classify(title, content, account or source, final_url, date or "")
     is_new = storage.upsert_item(item)
     storage.mark_seen(url)
+    if perm_url:
+        storage.mark_seen(perm_url)
     return {"ok": True, "is_new": is_new, "item": item}
