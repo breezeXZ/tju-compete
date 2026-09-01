@@ -320,15 +320,22 @@ def refresh():
     total = 0
     statuses = {}
     consecutive_blocks = 0
-    for acc in config.ACCOUNTS:
-        if not acc.get("enabled", True):
-            continue
+    # 分批：按游标取 BATCH_SIZE 个公众号，下一轮从后面继续（轮流覆盖全部，降低单轮请求量）
+    accounts = [a for a in config.ACCOUNTS if a.get("enabled", True)]
+    offset = storage.get_batch_offset() % len(accounts) if accounts else 0
+    batch = accounts[offset:offset + config.BATCH_SIZE]
+    storage.set_batch_offset((offset + config.BATCH_SIZE))
+    if not batch:
+        batch = accounts
+
+    for acc in batch:
         name = acc["name"]
         total += 1
         try:
             if acc.get("rss"):
                 articles = fetch_rss(acc)
             else:
+                # 被拦的号：跳过但继续下一个（不中断整轮）；达到硬上限才提前结束
                 if consecutive_blocks >= config.MAX_CONSECUTIVE_BLOCKS:
                     statuses[name] = "本轮已因频繁拦截提前结束"
                     storage.set_source_status(name, "⚠ 被拦截过多，本轮跳过")
@@ -353,7 +360,8 @@ def refresh():
             storage.set_source_status(name, "⚠ 抓取异常")
 
     storage.set_last_refresh(int(time.time()))
-    return {"status": "ok", "added": added, "sources_total": total, "sources_ok": len(statuses)}
+    return {"status": "ok", "added": added, "sources_total": total,
+            "sources_ok": len(statuses), "batch": len(batch)}
 
 
 def add_manual_link(url, source="手动添加"):

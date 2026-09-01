@@ -10,7 +10,7 @@ _data = None
 
 
 def _default():
-    return {"items": [], "seen_urls": {}, "last_refresh": 0, "source_status": {}}
+    return {"items": [], "seen_urls": {}, "last_refresh": 0, "source_status": {}, "batch_offset": 0}
 
 
 def load():
@@ -90,3 +90,13 @@ def set_source_status(name, status):
 
 def get_source_status():
     return load()["source_status"]
+
+
+def get_batch_offset():
+    return load().get("batch_offset", 0)
+
+
+def set_batch_offset(n):
+    d = load()
+    d["batch_offset"] = int(n)
+    save()

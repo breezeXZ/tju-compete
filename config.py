@@ -8,7 +8,7 @@ REFRESH_INTERVAL_SECONDS = 15 * 60   # 两次自动抓取最小间隔
 ADMIN_TOKEN = _os.environ.get("ADMIN_TOKEN", "change-me-please")  # 手动加链接的管理令牌（部署时务必改）
 DATA_FILE = _os.environ.get("DATA_FILE", "data.json")              # 本地 JSON 存储
 HTTP_TIMEOUT = 12                    # 抓取超时（秒）
-SOGOU_DELAY_SECONDS = 4              # 搜狗请求间隔（防验证码）
+SOGOU_DELAY_SECONDS = 5              # 搜狗请求间隔（防验证码）
 
 # ============ 天津大学学院清单（官方名单，2026 参考 tju.edu.cn/xy_b_.htm） ============
 COLLEGES = [
@@ -262,10 +262,12 @@ ACCOUNTS = [
 
 # 每个公众号最多抓取的文章数（保护频率，防止搜狗封禁）
 MAX_ARTICLES_PER_ACCOUNT = 10
-# 连续被搜狗拦截多少次后，本轮提前结束（不再硬刚）
-MAX_CONSECUTIVE_BLOCKS = 3
+# 连续被搜狗拦截达到该次数后，本轮提前结束（避免整轮硬刚被封死）
+MAX_CONSECUTIVE_BLOCKS = 40
 # 只保留 N 天以内的文章（搜狗按公众号搜常返回陈年旧文，用它过滤）
 MAX_ARTICLE_AGE_DAYS = 90
+# 每轮只抓多少公众号（分批抓取，降低单轮请求量，防被整体封）
+BATCH_SIZE = 15
 
 # 搜狗搜索反爬：请求头模板
 SOGOU_HEADERS = {
