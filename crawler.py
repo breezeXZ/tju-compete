@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
-"""多源爬虫：RSS/RssHub 源 + 搜狗微信搜索 + 手动链接兜底 + 文章正文抓取"""
+"""多源爬虫：搜狗微信搜索 + 天大官网新闻 + 手动链接兜底 + 文章正文抓取"""
 import re
 import time
 import logging
+import urllib.parse
 
 import requests
 
@@ -11,6 +12,80 @@ import storage
 import classifier
 
 log = logging.getLogger("crawler")
+
+# ============ 天大官网新闻 ============
+TJU_NEWS_BASE = "https://news.tju.edu.cn"
+# 栏目 -> 显示名（尽量覆盖竞赛/教学/院系通知）
+TJU_NEWS_COLS = [
+    {"path": "/xw/xsky.htm", "label": "天大官网·学术科研"},
+    {"path": "/xw/rcpy.htm", "label": "天大官网·人才培养"},
+    {"path": "/xw/xysx.htm", "label": "天大官网·院部时讯"},
+    {"path": "/xw/xzhx.htm", "label": "天大官网·综合新闻"},
+    {"path": "/xw/xxdt.htm", "label": "天大官网·信息动态"},
+]
+TJU_NEWS_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36",
+    "Accept-Language": "zh-CN,zh;q=0.9",
+}
+
+
+def fetch_tju_list(col, limit=20):
+    """抓某个栏目的列表页，返回 [{url,title,date}]（默认取最新 limit 条）"""
+    u = TJU_NEWS_BASE + col["path"]
+    resp = requests.get(u, headers=TJU_NEWS_HEADERS, timeout=15, verify=False)
+    resp.encoding = resp.apparent_encoding
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(resp.text, "html.parser")
+    # 官网列表结构：.list li / li 内含 a[href*='/info/'] + .times 日期
+    out = []
+    for li in soup.select(".list li, li"):
+        a = li.select_one("a[href*='/info/']")
+        if not a:
+            continue
+        title = a.get_text(" ", strip=True)
+        if len(title) < 6:
+            continue
+        url = urllib.parse.urljoin(TJU_NEWS_BASE, a.get("href"))
+        date = ""
+        for tm in li.select("[class*=time], .date, span"):
+            m = re.search(r"(\d{4})[/-](\d{1,2})[/-](\d{1,2})", tm.get_text())
+            if m:
+                date = "%s-%02d-%02d" % (int(m.group(1)), int(m.group(2)), int(m.group(3)))
+                break
+        out.append({"url": url, "title": title, "date": date})
+    # 去重 + 限条数
+    seen = set(); uniq = []
+    for r in out:
+        if r["url"] not in seen:
+            seen.add(r["url"]); uniq.append(r)
+    return uniq[:limit]
+
+
+def fetch_tju_article(url):
+    """抓详情页，返回 (title, content_text, date_iso)"""
+    resp = requests.get(url, headers=TJU_NEWS_HEADERS, timeout=15, verify=False)
+    resp.encoding = resp.apparent_encoding
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(resp.text, "html.parser")
+    t_el = soup.select_one(".info_title") or soup.select_one("h1") or soup.select_one("title")
+    c_el = (soup.select_one(".v_news_content") or soup.select_one("#vsb_content")
+            or soup.select_one(".content") or soup.select_one(".article"))
+    title = t_el.get_text(" ", strip=True) if t_el else ""
+    content = c_el.get_text(" ", strip=True) if c_el else ""
+    date = ""
+    # 详情页日期：优先 .times 里第二个（第一个是栏目英文名），否则全文搜日期
+    d_els = soup.select(".times") or soup.select("[class*=time]")
+    for d_el in d_els:
+        m = re.search(r"(\d{4})[/-](\d{1,2})[/-](\d{1,2})", d_el.get_text())
+        if m:
+            date = "%s-%02d-%02d" % (int(m.group(1)), int(m.group(2)), int(m.group(3)))
+            break
+    if not date:
+        m = re.search(r"(\d{4})[-年/.](\d{1,2})[-月/.](\d{1,2})", resp.text)
+        if m:
+            date = "%s-%02d-%02d" % (int(m.group(1)), int(m.group(2)), int(m.group(3)))
+    return title, content, date
+
 
 
 # ============ 通用 HTTP ============
@@ -254,16 +329,28 @@ def _is_perm_link(url):
     return bool(url) and "mp.weixin.qq.com/s/" in url and "src=11" not in url
 
 
+def _is_tju_news(url):
+    """天大官网新闻链接"""
+    return bool(url) and ("news.tju.edu.cn" in url or "tju.edu.cn/info" in url)
+
+
 def prune(items):
-    """导出前清洗：只保留 名单内 + 近期 + 永久链接 的条目（旧垃圾自动剔除）"""
+    """导出前清洗：
+    - 官网新闻（news.tju.edu.cn）：始终保留（只要近期）
+    - 公众号（mp.weixin）：只保留 名单内 + 永久链接 + 近期
+    """
     out = []
     for it in items:
-        if not _is_perm_link(it.get("url", "")):
-            continue
-        if not _is_known_account(it.get("source", "")):
-            continue
+        url = it.get("url", "")
         d = it.get("date", "")
         if d and not is_recent(d, config.MAX_ARTICLE_AGE_DAYS):
+            continue
+        if _is_tju_news(url):
+            out.append(it)
+            continue
+        if not _is_perm_link(url):
+            continue
+        if not _is_known_account(it.get("source", "")):
             continue
         out.append(it)
     return out
@@ -362,6 +449,44 @@ def refresh():
     storage.set_last_refresh(int(time.time()))
     return {"status": "ok", "added": added, "sources_total": total,
             "sources_ok": len(statuses), "batch": len(batch)}
+
+
+def crawl_tju_news():
+    """天大官网新闻：抓列表 → 详情 → 分类入库。官网稳定、最新，是主数据源。返回新增数"""
+    added = 0
+    # 官网分批：每轮抓 2 个栏目，避免超时；用本轮的 url 去重（跨栏目同文章只留一次）
+    cols = TJU_NEWS_COLS
+    offset = storage.get_batch_offset() % len(cols) if cols else 0
+    this_cols = cols[offset:offset + 2]
+    storage.set_batch_offset(offset + 2)
+    if not this_cols:
+        this_cols = cols
+    seen_this_round = set()
+    for col in this_cols:
+        try:
+            items = fetch_tju_list(col, limit=15)
+        except Exception as e:
+            log.warning("官网栏目 %s 抓列表失败: %s", col["path"], e)
+            continue
+        for it in items:
+            url = it["url"]
+            if url in seen_this_round:      # 跨栏目同文章去重
+                continue
+            try:
+                title, content, date = fetch_tju_article(url)
+            except Exception as e:
+                log.warning("官网文章抓取失败 %s: %s", url, e)
+                continue
+            seen_this_round.add(url)
+            if not title and not content:
+                title = it["title"]
+            date = date or it["date"] or ""
+            if date and not is_recent(date, config.MAX_ARTICLE_AGE_DAYS):
+                continue
+            item = classifier.classify(title, content, col["label"], url, date)
+            if storage.upsert_item(item):
+                added += 1
+    return added
 
 
 def add_manual_link(url, source="手动添加"):
